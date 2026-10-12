@@ -14,6 +14,11 @@ data/
 work/
 *.mp4
 
+# Personal driver scripts, not part of the upstream package
+/one_scan.py
+/build_logo_template.py
+/find_cutover.py
+
 # Desktop build output
 desktop/build/
 desktop/node_modules/

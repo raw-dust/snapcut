@@ -21,6 +21,10 @@ PRESETS = {
     "nbc": {"bug": (330, 634, 620, 36), "clock": (642, 673, 28, 18), "mode": "frozen"},
     "prime": {"bug": (345, 630, 590, 56), "clock": (684, 661, 34, 24), "mode": "frozen"},
     "espn": {"bug": (290, 628, 700, 70), "clock": (684, 668, 32, 24), "mode": "frozen"},
+    # NFL Network's international-game feed (e.g. London games simulcast on a
+    # local affiliate). Clock resets to 40/25 and holds for the play's
+    # duration like CBS/NBC/Prime, just at different coordinates.
+    "nflnet": {"bug": (280, 600, 700, 100), "clock": (678, 662, 50, 26), "mode": "frozen"},
 }
 
 
