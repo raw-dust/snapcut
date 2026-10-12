@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from . import tools
-from .extract import BUG_SCALE, FPS, PRESETS, bug_distance, detect_network, read_crops
+from .extract import FPS, PRESETS, bug_distance, combined_extract, detect_network
 from .whistle import SR, whistle_onsets
 
 # Bump whenever a change moves the cut points: published cuts carry it.
@@ -286,15 +286,13 @@ def analyze(src, network=None, log=print):
     network = network or detected
     log(f"network: {network} (logo match: {', '.join(f'{k} {v:.0f}' for k, v in scores.items())})")
     preset = PRESETS[network]
-    bug = read_crops(src, preset["bug"], BUG_SCALE)
+    bug, clocks = combined_extract(src, preset)
     if preset["mode"] == "hidden":
-        clocks = [read_crops(src, r) for r in preset["clock"]]
         n = min(len(bug), *map(len, clocks))
         mask = live_mask([c[:n] for c in clocks], bug[:n], "hidden")
     else:
-        clock = read_crops(src, preset["clock"])
-        n = min(len(clock), len(bug))
-        mask = live_mask(clock[:n], bug[:n])
+        n = min(len(bug), len(clocks[0]))
+        mask = live_mask(clocks[0][:n], bug[:n])
     segs, whistles = segments(mask, duration, load_audio(src))
     kept = sum(b - a for a, b in segs)
     log(f"{len(segs)} plays ({whistles} cut on the whistle), "

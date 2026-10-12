@@ -1,4 +1,5 @@
 """Scorebug layouts per network, network detection, and per-frame crop extraction."""
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,46 @@ def read_crops(src, region, scale=1, fps=FPS):
     ]
     raw = tools.run(cmd, capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.uint8).reshape(-1, oh, ow)
+
+
+def combined_extract(src, preset, fps=FPS):
+    """Bug crop and clock crop(s) in a single ffmpeg decode pass instead of
+    one pass per region. Audio is deliberately kept out of this pass: mapping
+    it alongside the video crops makes ffmpeg pad/sync the video against the
+    audio stream's start time, which can shift or duplicate a frame here and
+    there -- and this detector is sensitive enough to that near its
+    thresholds to occasionally merge or split a play's boundaries."""
+    bx, by, bw, bh = preset["bug"]
+    bow, boh = bw // BUG_SCALE, bh // BUG_SCALE
+    clock_regions = preset["clock"] if isinstance(preset["clock"], list) else [preset["clock"]]
+
+    n_branches = 1 + len(clock_regions)
+    filt = [f"[0:v]fps={fps},scale=1280:720,split={n_branches}" + "".join(f"[s{i}]" for i in range(n_branches))]
+    filt.append(f"[s0]crop={bw}:{bh}:{bx}:{by},scale={bow}:{boh}[bug]")
+    for i, (cx, cy, cw, ch) in enumerate(clock_regions):
+        # read_crops's chain ends in a scale too (a no-op in size here, since
+        # it doesn't downscale the clock); matching it exactly matters --
+        # swscale isn't bit-identical with vs without that pass, even at the
+        # same output size, and the clock crop is detailed/high-frequency
+        # enough for that to move the per-pixel distances it's compared on.
+        filt.append(f"[s{i + 1}]crop={cw}:{ch}:{cx}:{cy},scale={cw}:{ch}[clk{i}]")
+    graph = ";".join(filt)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        bug_raw = tmp / "bug.raw"
+        clk_raws = [tmp / f"clk{i}.raw" for i in range(len(clock_regions))]
+
+        cmd = [tools.ffmpeg(), "-loglevel", "error", "-i", str(src), "-filter_complex", graph,
+               "-map", "[bug]", "-f", "rawvideo", "-pix_fmt", "gray", str(bug_raw)]
+        for i, p in enumerate(clk_raws):
+            cmd += ["-map", f"[clk{i}]", "-f", "rawvideo", "-pix_fmt", "gray", str(p)]
+        tools.run(cmd, capture_output=True, check=True)
+
+        bug = np.fromfile(bug_raw, np.uint8).reshape(-1, boh, bow)
+        clocks = [np.fromfile(p, np.uint8).reshape(-1, ch, cw)
+                  for p, (_, _, cw, ch) in zip(clk_raws, clock_regions)]
+    return bug, clocks
 
 
 def sample_frames(src, duration, n=60):
